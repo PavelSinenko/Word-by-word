@@ -1,0 +1,3 @@
+echo "Word-by-word" >> .gitignore
+echo "*.exe" >> .gitignore
+echo "*.out" >> .gitignore
