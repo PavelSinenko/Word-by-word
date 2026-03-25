@@ -19,6 +19,7 @@
 #include <stdbool.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <curl/curl.h>
 
 #include "dictionary.h"
 
@@ -209,4 +210,68 @@ bool unload_rec (node* dict_rem)
 bool unload (void)
 {
     return unload_rec (dict);
+}
+
+/**
+ * Callback function for curl to handle response data
+ */
+static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
+    (void)userp;
+    ((char *)contents)[size * nmemb] = 0;
+    return size * nmemb;
+}
+
+/**
+ *
+ * Checks if word is present in online dictionary via Free Dictionary API.
+ * Returns true if word exists in online dictionary else false.
+ *
+ */
+bool check_online (const char* word)
+{
+    CURL *curl;
+    CURLcode res;
+    char url[256];
+    long http_code = 0;
+    
+    // Initialize CURL
+    curl = curl_easy_init();
+    if (!curl) {
+        printf("Ошибка инициализации CURL\n");
+        return false;
+    }
+    
+    // Build URL for API request
+    snprintf(url, sizeof(url), "https://api.dictionaryapi.dev/api/v2/entries/en/%s", word);
+    
+    // Set curl options
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "WordByWord/1.0");
+    
+    // Perform request
+    res = curl_easy_perform(curl);
+    
+    if (res != CURLE_OK) {
+        printf("Ошибка подключения к словарю: %s\n", curl_easy_strerror(res));
+        curl_easy_cleanup(curl);
+        return false;
+    }
+    
+    // Get HTTP response code
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    
+    // Cleanup
+    curl_easy_cleanup(curl);
+    
+    // If HTTP 200 - word found, if 404 - not found
+    if (http_code == 200) {
+        return true;
+    } else if (http_code == 404) {
+        return false;
+    } else {
+        printf("Ошибка сервера: %ld\n", http_code);
+        return false;
+    }
 }

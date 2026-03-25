@@ -1,47 +1,63 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <time.h>
-#include "dictionary.h"
+#include <stdio.h>         // Библиотека для ввода-вывода
+#include <string.h>        // Библиотека для строк
+#include <stdlib.h>        // Библиотека для генерации случайных чисел
+#include <time.h>          // Библиотека для работы со временем 
+#include "dictionary.h"    // Подключение заголовочного файла словаря, который содержит прототипы функций load и check
 
 int main () {
 
+    // Загрузка словаря и сообщение об ошибке
     if (!load("Dictionary.txt")) {
         printf("Словарь не загрузился, давай по новой\n");
         return 1; 
     }
 
-    char letters[] = {'a', 'b', 'c', 'd', 'e', 'f'};
-    int lettersCount = sizeof(letters) / sizeof(letters[0]);
-    int positions[] = {1, 2, 3};
-    int positionsCount = sizeof(positions) / sizeof(positions[0]);
+    // Генерация случайной стороны кубика на основе текущего времени,
+    srand(time(NULL)); //srand - установка стартовой точки, time(NULL) - возвращает текущее время в секундах, из-за этого при каждом запуске генерируются разные числа
 
-    srand(time(NULL));
 
-    int randomLetter = rand() % lettersCount;
-    int randomPosition = rand() % positionsCount;
+    //Переменные и массивы для кубиков и количества элементов в них
+    char letters[] = {'a', 'b', 'c', 'd', 'e', 'f'};                    // Кубик с буквами, в виде массива 
+    int lettersCount = sizeof(letters) / sizeof(letters[0]);            // Количество букв в кубике, размер массивав байтах на количество элементов
+    int positions[] = {1, 2, 3};                                        // Кубик с позициями
+    int positionsCount = sizeof(positions) / sizeof(positions[0]);      // Количество позиций
 
-    printf("Придумайте слово, в котором будет буква: %c\n", letters[randomLetter]);
+    int randomLetter = rand() % lettersCount;     // Случайная буква, rand возвращает случайное число, а оператор % ограничивает его диапазон от 0 до lettersCount-1,
+    int randomPosition = rand() % positionsCount; // Случайная позиция
+    
+
+    //Сообщения для игрока, для них берутся случайная буква и позиция из кубиков
+    printf("Придумайте слово, в котором будет буква: %c\n", letters[randomLetter]);  
     printf("Эта буква должна быть в слове на позиции номер: %i\n", positions[randomPosition]);
-    printf("Слово будет проверяться через английский словарь\n");
+    printf("Слово будет проверяться через английский словарь в интернете\n");
 
-    char word[20];
 
+    // Ввод слова от игрока
+    char word[20];   // Массив для введенного слова
     printf("Введите слово: ");
-    fgets(word, sizeof(word), stdin);   
-    word[strcspn(word,"\n")] = 0;       
 
-    if (check(word)) {
-        printf("Такое слово есть\n");
-        if (word[randomPosition] == letters[randomLetter]) {
-            printf("И ты красава, хорошо придумал!");
+    // Чтение слова с клавиатуры, принимает массив хранящий слово, его размер и источник ввода 
+    // fgets также добавляет нуль-терминатор в конец строки для обозначения ее конца
+    fgets(word, sizeof(word), stdin);   
+
+    // Удаление символа новой строки после ввода через fgets
+    // strcspn возвращает индекс первого вхождения символа новой строки, и чтобы строка была корректной заменяет его на нуль, 
+    word[strcspn(word,"\n")] = 0;      
+
+
+    //Основная функция 
+    //Если слово есть в словаре, то проверяем совпадает ли буква и позиция
+    if (check_online(word)) {    // check_online - функция из dictionary.h, проверяет наличие слова через интернет-словарь, возвращает true если слово есть, false если нет
+        printf("Такое слово есть!\n");
+        if (word[positions[randomPosition] - 1] == letters[randomLetter]) { 
+            printf("И ты красава, хорошо придумал!\n");
         } else {
-            printf("Но нет, оно не подходит");
+            printf("Но нет, оно не подходит\n");
         }
-    } else {
+    } else {   // Если такого слова нет, то сообщаем об этом 
         printf("Ты по-моему перепутал. Такого слова нет\n");
     }
 
-    unload ();
+    unload (); // Выгрузка словаря из памяти
     return 0;
 }

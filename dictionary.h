@@ -50,6 +50,22 @@ unsigned int size (void);
 
 /**
  *
+ * Checks if word is present in online dictionary via API.
+ * Returns true if word exists in online dictionary else false.
+ *
+ */
+bool check_online (const char* word);
+
+
+/**
+ *
+ * Unload function declaration
+ *
+ */
+bool unload (void);
+
+/**
+ *
  * Unloads dictionary from memory.  Returns true if successful else false.
  * Frees allocated memory blocks.
  *
