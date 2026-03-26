@@ -281,9 +281,10 @@ bool check_online (const char* word)
     CURLcode res;
     char url[512];
     long http_code = 0;
-    const char* api_key = getenv("YANDEX_DICT_API_KEY");
+    const char* api_key = getenv("YANDEX_DICT_API_KEY"); // Мюда вставлять API ключ
     char* encoded_word;
 
+    //После вставки ключа эту функцию удалить
     if (!api_key) {
         printf("Ошибка: переменная окружения YANDEX_DICT_API_KEY не установлена\n");
         return false;
