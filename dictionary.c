@@ -213,40 +213,116 @@ bool unload (void)
 }
 
 /**
+ * Struct for dynamic response storage from CURL.
+ */
+typedef struct {
+    char *memory;
+    size_t size;
+} MemoryStruct;
+
+/**
  * Callback function for curl to handle response data
  */
 static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
-    (void)userp;
-    ((char *)contents)[size * nmemb] = 0;
-    return size * nmemb;
+    size_t realsize = size * nmemb;
+    MemoryStruct *mem = (MemoryStruct *)userp;
+
+    char *ptr = realloc(mem->memory, mem->size + realsize + 1);
+    if (ptr == NULL) {
+        // out of memory
+        return 0;
+    }
+
+    mem->memory = ptr;
+    memcpy(&(mem->memory[mem->size]), contents, realsize);
+    mem->size += realsize;
+    mem->memory[mem->size] = 0;
+
+    return realsize;
+}
+
+/**
+ * Checks the JSON response from Yandex Dictionary and returns true if
+ * the "def" array contains at least one definition.
+ */
+static bool yandex_response_has_definition(const char *json) {
+    if (!json) {
+        return false;
+    }
+
+    const char *p = strstr(json, "\"def\"");
+    if (!p) {
+        return false;
+    }
+
+    p = strchr(p, '[');
+    if (!p) {
+        return false;
+    }
+
+    p++; // skip '['
+    while (*p && isspace((unsigned char)*p)) {
+        p++;
+    }
+
+    return *p != ']';
 }
 
 /**
  *
- * Checks if word is present in online dictionary via Free Dictionary API.
+ * Checks if word is present in online dictionary via Yandex Dictionary API.
  * Returns true if word exists in online dictionary else false.
+ * Supports Russian and English words.
  *
  */
 bool check_online (const char* word)
 {
     CURL *curl;
     CURLcode res;
-    char url[256];
+    char url[512];
     long http_code = 0;
+    const char* api_key = getenv("YANDEX_DICT_API_KEY");
+    char* encoded_word;
+
+    if (!api_key) {
+        printf("Ошибка: переменная окружения YANDEX_DICT_API_KEY не установлена\n");
+        return false;
+    }
+
+    MemoryStruct chunk;
+    chunk.memory = malloc(1);  // will be grown by write_callback
+    chunk.size = 0;
+
+    if (!chunk.memory) {
+        printf("Отказ в памяти для ответа от сервера\n");
+        return false;
+    }
     
     // Initialize CURL
     curl = curl_easy_init();
     if (!curl) {
         printf("Ошибка инициализации CURL\n");
+        free(chunk.memory);
         return false;
     }
     
-    // Build URL for API request
-    snprintf(url, sizeof(url), "https://api.dictionaryapi.dev/api/v2/entries/en/%s", word);
+    // URL-encode the word to handle Russian characters properly
+    encoded_word = curl_easy_escape(curl, word, 0);
+    if (!encoded_word) {
+        printf("Ошибка кодирования слова\n");
+        curl_easy_cleanup(curl);
+        free(chunk.memory);
+        return false;
+    }
+    
+    // Build URL for Yandex Dictionary API
+    // Use ru-ru for Russian definitions
+    snprintf(url, sizeof(url), "https://dictionary.yandex.net/api/v1/dicservice.json/lookup?key=%s&lang=ru-ru&text=%s", api_key, encoded_word);
     
     // Set curl options
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "WordByWord/1.0");
     
@@ -256,22 +332,30 @@ bool check_online (const char* word)
     if (res != CURLE_OK) {
         printf("Ошибка подключения к словарю: %s\n", curl_easy_strerror(res));
         curl_easy_cleanup(curl);
+        curl_free(encoded_word);
+        free(chunk.memory);
         return false;
     }
     
     // Get HTTP response code
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
     
-    // Cleanup
-    curl_easy_cleanup(curl);
+    // Free the encoded word
+    curl_free(encoded_word);
     
-    // If HTTP 200 - word found, if 404 - not found
+    // Cleanup CURL
+    curl_easy_cleanup(curl);
+
     if (http_code == 200) {
-        return true;
+        bool result = yandex_response_has_definition(chunk.memory);
+        free(chunk.memory);
+        return result;
     } else if (http_code == 404) {
+        free(chunk.memory);
         return false;
     } else {
         printf("Ошибка сервера: %ld\n", http_code);
+        free(chunk.memory);
         return false;
     }
 }
