@@ -1,14 +1,14 @@
 CC = gcc
-CFLAGS = -Wall -Wextra
-LIBS = -lcurl
+CFLAGS = -Wall -Wextra $(shell pkg-config --cflags gtk+-3.0)
+LIBS = $(shell pkg-config --libs gtk+-3.0) -lcurl
 TARGET = Word-by-word
-SRCS = Word-by-word.c dictionary.c
+SRCS = Word-by-word.c
 OBJS = $(SRCS:.c=.o)
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LIBS)
+	$(CC) -o $(TARGET) $(OBJS) $(LIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
