@@ -8,12 +8,23 @@
 #include <time.h>           // библиотека для функций времени time, srand
 #include <curl/curl.h>      // библиотека libcurl для HTTP-запросов к Wiktionary API
 
-static const char *letters[] = {"а", "б", "в", "г", "д", "е"}; // кубик с буквами
-static const int positions[] = {1, 2, 3};                      // кубик с позициями
+static const char *cubes_letters[10][6] = {  // 10 наборов по 6 букв 
+    {"а", "о", "е", "и", "н", "т"},
+    {"р", "с", "в", "л", "к", "м"},
+    {"д", "п", "у", "я", "ё", "з"},
+    {"б", "г", "ж", "й", "х", "ч"},
+    {"ш", "щ", "ц", "э", "ю", "ф"},
+    {"а", "р", "т", "о", "л", "с"},      
+    {"и", "в", "н", "к", "м", "д"},    
+    {"п", "у", "б", "г", "ч", "з"},      
+    {"ж", "ш", "ц", "щ", "ф", "х"},
+    {"е", "д", "р", "с", "л", "а"},
+};
+static const int positions[] = {1, 2, -1};                      // кубик с позициями
 static GtkWidget *label_task;                   // метка для отображения текущего задания
 static GtkWidget *label_result;                 // метка для отображения результата проверки слова
 static GtkWidget *entry_word;                   // поле ввода, куда пользователь вводит слово
-static int current_letter_index = 0;            // индекс текущей выбранной буквы 
+static int current_cube_set_index = 0;            // индекс текущей выбранной буквы 
 static int current_position_index = 0;          // индекс текущей выбранной позиции 
 
 // Получение позиции n-го символа на основе количества символов в строке, а не байтов
@@ -103,23 +114,40 @@ bool check_online(const char* word) {
     return result;
 }
 static void update_task(void) {
-    char buffer[128];
-    snprintf(buffer, sizeof(buffer), "Придумайте слово с буквой \"%s\" на позиции %d.",
-             letters[current_letter_index], positions[current_position_index]);
+    char buffer[256];
+    char cubes_display[128] = "";
+    
+    for (int i = 0; i < 6; i++) {
+        strcat(cubes_display, cubes_letters[current_cube_set_index][i]);
+        if (i < 5) strcat(cubes_display, " ");
+    }
+    
+    int pos = positions[current_position_index];
+    if (pos == -1) {
+        snprintf(buffer, sizeof(buffer), 
+                 "Кубики: [ %s ]\nПридумайте слово с одной из букв выше на последней позиции.",
+                 cubes_display);
+    } else {
+        snprintf(buffer, sizeof(buffer), 
+                 "Кубики: [ %s ]\nПридумайте слово с одной из букв выше на позиции %d.",
+                 cubes_display, pos);
+    }
+    
     gtk_label_set_text(GTK_LABEL(label_task), buffer);
     gtk_label_set_text(GTK_LABEL(label_result), "");
     gtk_entry_set_text(GTK_ENTRY(entry_word), "");
 }
 
 static void choose_new_task(void) {
-    current_letter_index = rand() % (sizeof(letters) / sizeof(letters[0]));
-    current_position_index = rand() % (sizeof(positions) / sizeof(positions[0]));
+    current_cube_set_index = rand() % 10; 
+    current_position_index = rand() % (sizeof(positions) / sizeof(positions[0])); // 1, 2 или 3
     update_task();
 }
 
 static void on_check_word(GtkButton *button, gpointer user_data) {
     (void)button;
     (void)user_data;
+    
     const char *word = gtk_entry_get_text(GTK_ENTRY(entry_word));
     if (g_utf8_strlen(word, -1) == 0) {
         gtk_label_set_text(GTK_LABEL(label_result), "Введите слово.");
@@ -131,11 +159,32 @@ static void on_check_word(GtkButton *button, gpointer user_data) {
         return;
     }
 
-    int byte_pos = utf8_byte_offset(word, positions[current_position_index] - 1);
-    if (strncmp(&word[byte_pos], letters[current_letter_index], strlen(letters[current_letter_index])) == 0) {
+    int target_pos = positions[current_position_index];
+    if (target_pos == -1) {
+        target_pos = (int)g_utf8_strlen(word, -1);
+    }
+
+    if (target_pos > (int)g_utf8_strlen(word, -1)) {
+        gtk_label_set_text(GTK_LABEL(label_result), "Слово слишком короткое для этой позиции.");
+        return;
+    }
+
+    int byte_pos = utf8_byte_offset(word, target_pos - 1);
+    
+    bool letter_found = false;
+    for (int i = 0; i < 6; i++) {
+        const char *allowed = cubes_letters[current_cube_set_index][i];
+        if (strncmp(&word[byte_pos], allowed, strlen(allowed)) == 0) {
+            letter_found = true;
+            break;
+        }
+    }
+    
+    if (letter_found) {
         gtk_label_set_text(GTK_LABEL(label_result), "Поздравляю! Слово подходит.");
     } else {
-        gtk_label_set_text(GTK_LABEL(label_result), "Такое слово существует, но не подходит.");
+        gtk_label_set_text(GTK_LABEL(label_result), 
+            "Слово есть, но на позиции нет ни одной из букв с кубиков.");
     }
 }
 
