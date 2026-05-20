@@ -154,27 +154,32 @@ static void on_check_word(GtkButton *button, gpointer user_data) {
         return;
     }
 
-    if (!check_online(word)) {
+    // Приводим слово к нижнему регистру
+    char *lower_word = g_utf8_strdown(word, -1);
+
+    if (!check_online(lower_word)) {
         gtk_label_set_text(GTK_LABEL(label_result), "Слово не найдено в словаре.");
+        g_free(lower_word);
         return;
     }
 
     int target_pos = positions[current_position_index];
     if (target_pos == -1) {
-        target_pos = (int)g_utf8_strlen(word, -1);
+        target_pos = (int)g_utf8_strlen(lower_word, -1);
     }
 
-    if (target_pos > (int)g_utf8_strlen(word, -1)) {
+    if (target_pos > (int)g_utf8_strlen(lower_word, -1)) {
         gtk_label_set_text(GTK_LABEL(label_result), "Слово слишком короткое для этой позиции.");
+        g_free(lower_word);
         return;
     }
 
-    int byte_pos = utf8_byte_offset(word, target_pos - 1);
+    int byte_pos = utf8_byte_offset(lower_word, target_pos - 1);
     
     bool letter_found = false;
     for (int i = 0; i < 6; i++) {
         const char *allowed = cubes_letters[current_cube_set_index][i];
-        if (strncmp(&word[byte_pos], allowed, strlen(allowed)) == 0) {
+        if (strncmp(&lower_word[byte_pos], allowed, strlen(allowed)) == 0) {
             letter_found = true;
             break;
         }
@@ -186,12 +191,60 @@ static void on_check_word(GtkButton *button, gpointer user_data) {
         gtk_label_set_text(GTK_LABEL(label_result), 
             "Слово есть, но на позиции нет ни одной из букв с кубиков.");
     }
+    
+    g_free(lower_word);
 }
 
 static void on_new_task(GtkButton *button, gpointer user_data) {
     (void)button;
     (void)user_data;
     choose_new_task();
+}
+
+static void on_show_rules(GtkButton *button, gpointer user_data) {
+    (void)user_data;
+    
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        "Правила игры",
+        GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(button))),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        "Закрыть",
+        GTK_RESPONSE_CLOSE,
+        NULL);
+    
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 380, 200);
+    gtk_container_set_border_width(GTK_CONTAINER(dialog), 16);
+    
+    // Текст правил
+    const char *rules_text = 
+        "Правила игры «Word by Word»\n\n"
+        "1. В каждом раунде выпадают 6 случайных букв\n"
+        "   (так называемые «кубики»).\n\n"
+        "2. Также выбирается позиция:\n"
+        "   • 1 — первая буква слова\n"
+        "   • 2 — вторая буква слова\n"
+        "   • последняя - последняя буква слова\n\n"
+        "3. Ваша задача - придумать русское слово,\n"
+        "   содержащее ОДНУ из выпавших букв\n"
+        "   на указанной позиции.\n\n"
+        "4. Слово проверяется по онлайн-словарю\n"
+        "   Wiktionary. Если слова нет в словаре, то\n"
+        "   оно не засчитывается.\n\n"
+        "5. Можно использовать любую букву\n"
+        "   из набора кубиков.\n\n"
+        "6. Нажмите на кнопку «Новое задание» чтобы поменять набор букв на новый.\n\n"
+        "Удачи вам!";
+    
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    
+    GtkWidget *label = gtk_label_new(rules_text);
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0);
+    gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
+    gtk_box_pack_start(GTK_BOX(content), label, TRUE, TRUE, 0);
+    
+    gtk_widget_show_all(dialog);
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
 }
 
 int main(int argc, char *argv[]) {
@@ -202,7 +255,7 @@ int main(int argc, char *argv[]) {
 
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "Word by Word");
-    gtk_window_set_default_size(GTK_WINDOW(window), 420, 220);
+    gtk_window_set_default_size(GTK_WINDOW(window), 500, 240);
     gtk_container_set_border_width(GTK_CONTAINER(window), 16);
 
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
@@ -234,6 +287,11 @@ int main(int argc, char *argv[]) {
     GtkWidget *new_button = gtk_button_new_with_label("Новое задание");
     g_signal_connect(new_button, "clicked", G_CALLBACK(on_new_task), NULL);
     gtk_box_pack_start(GTK_BOX(button_box), new_button, TRUE, TRUE, 0);
+
+    // Кнопка "Правила"
+    GtkWidget *rules_button = gtk_button_new_with_label("Правила");
+    g_signal_connect(rules_button, "clicked", G_CALLBACK(on_show_rules), NULL);
+    gtk_box_pack_start(GTK_BOX(button_box), rules_button, TRUE, TRUE, 0);
 
     label_result = gtk_label_new(NULL);
     gtk_label_set_xalign(GTK_LABEL(label_result), 0.0);
