@@ -27,58 +27,67 @@ static GtkWidget *entry_word;                   // поле ввода, куда
 static int current_cube_set_index = 0;            // индекс текущей выбранной буквы 
 static int current_position_index = 0;          // индекс текущей выбранной позиции 
 
-// Получение позиции n-го символа на основе количества символов в строке, а не байтов
-int utf8_byte_offset(const char* str, int char_pos) {
-    int byte_pos = 0;
-    for (int i = 0; i < char_pos && str[byte_pos]; i++) {
+
+// Функция получения позиции русских букв в строке
+int utf8_byte_offset(const char* str, int char_pos) { // принимает введенную строку и номер позиции что надо найти
+    int byte_pos = 0; // возвращаемая переменная 
+    for (int i = 0; i < char_pos && str[byte_pos]; i++) { // цикл идет по символам введенной строки
         byte_pos++;
-        while (str[byte_pos] && (str[byte_pos] & 0xC0) == 0x80) {
+        while (str[byte_pos] && (str[byte_pos] & 0xC0) == 0x80) { // промежуточная проверка байтов одной буквы
             byte_pos++;
         }
     }
-    return byte_pos;
+    return byte_pos; // возвращает смещение в байтах до начала нужного символа
 }
 
+
+// Структура для хранения HTTP ответа от сервера
 typedef struct {
-    char *memory;
-    size_t size;
+    char *memory; // указатель на буфер куда идут данные 
+    size_t size;  // сколько байт накопилось
 } MemoryStruct;
 
-static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
-    size_t realsize = size * nmemb;
-    MemoryStruct *mem = (MemoryStruct *)userp;
+//callback функция libcurl, вызывается когда от сервера приходят данные
+static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) { // принимает присланные данные, размер одного из элементов, их кол-во, указатель на структуру MemoryStruct
+    size_t realsize = size * nmemb;       // вычисление размера полученных данных
+    MemoryStruct *mem = (MemoryStruct *)userp; // доступ к структуре
 
-    char *ptr = realloc(mem->memory, mem->size + realsize + 1);
-    if (ptr == NULL) {
+    char *ptr = realloc(mem->memory, mem->size + realsize + 1); // добавление места для новых данных
+    if (ptr == NULL) {    // если память кончилась то ошибка
         return 0;
     }
 
-    mem->memory = ptr;
-    memcpy(&(mem->memory[mem->size]), contents, realsize);
-    mem->size += realsize;
-    mem->memory[mem->size] = 0;
+    mem->memory = ptr;                                         // сохраняет новый адрес буфера
+    memcpy(&(mem->memory[mem->size]), contents, realsize);     // копирует новую порцию данных в освободившееся место
+    mem->size += realsize;                                    // обновляет размер накопленных данных
+    mem->memory[mem->size] = 0;                               // записывает \0 в самый конец для корректной строки
 
-    return realsize;
+    return realsize; // возвращает кол-во обработанных байт
 }
 
+//Функция проверки слова онлайн
 bool check_online(const char* word) {
-    CURL *curl;
-    CURLcode res;
-    char url[512];
-    long http_code = 0;
+    CURL *curl;          // указатель на сессию libcurl 
+    CURLcode res;        // код результата выполнения запроса был успех или ошибка
+    char url[512];       // строка в которой собирается полный адрес для запроса
+    long http_code = 0;  // HTTP-код ответа, 200 успех, 404 не найдено
+    
 
+    //структура для хранения ответа от сервера
     MemoryStruct chunk;
-    chunk.memory = malloc(1);
-    chunk.size = 0;
+    chunk.memory = malloc(1); // выделение минимального кусочка памяти
+    chunk.size = 0;           
 
-    if (!chunk.memory) return false;
+    if (!chunk.memory) return false; // если память не выделилась то ошибка
 
+    // Инициализация libcurl
     curl = curl_easy_init();
     if (!curl) {
-        free(chunk.memory);
+        free(chunk.memory);   // освобождает память
         return false;
     }
 
+    // Кодирование слова для URL
     char *encoded_word = curl_easy_escape(curl, word, 0);
     if (!encoded_word) {
         curl_easy_cleanup(curl);
@@ -86,33 +95,37 @@ bool check_online(const char* word) {
         return false;
     }
 
-    // Запрос к русскому Викисловарю
-    snprintf(url, sizeof(url), 
+    // Формирование строки запроса к Викисловарю
+    snprintf(url, sizeof(url), // подставляет закодированное слово вместо %s
         "https://ru.wiktionary.org/w/api.php?action=query&titles=%s&format=json",
         encoded_word);
 
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "WordByWord/1.0");
+    curl_easy_setopt(curl, CURLOPT_URL, url);                       // адрес сервера
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback); // функция что принимает данные
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);            // куда заносить данные
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);                 // ждать не больше 10 секунд
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "WordByWord/1.0");  // имя откуда запрос
 
+    //Выполнение запроса
     res = curl_easy_perform(curl);
     
-    bool result = false;
-    if (res == CURLE_OK) {
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-        // Страница существует, если в ответе нет поля "missing"
+    //Проверка результата
+    bool result = false;      //базово ниче нет
+    if (res == CURLE_OK) {     //если запрос без ошибок
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);   // получение http кода
+        // слово существует если в ответе нет поля "missing"
         if (http_code == 200 && strstr(chunk.memory, "\"missing\"") == NULL) {
             result = true;
         }
     }
 
-    curl_free(encoded_word);
-    curl_easy_cleanup(curl);
-    free(chunk.memory);
-    return result;
+    curl_free(encoded_word);    // освобождает закодированное слово
+    curl_easy_cleanup(curl);    // закрывает сессию libcurl
+    free(chunk.memory);         // освобождает буфер с ответом
+    return result;              // возвращает true или false
 }
+
+
 static void update_task(void) {
     char buffer[256];
     char cubes_display[128] = "";
@@ -202,20 +215,17 @@ static void on_new_task(GtkButton *button, gpointer user_data) {
 }
 
 static void on_show_rules(GtkButton *button, gpointer user_data) {
+    (void)button;
     (void)user_data;
     
-    GtkWidget *dialog = gtk_dialog_new_with_buttons(
-        "Правила игры",
-        GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(button))),
-        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
-        "Закрыть",
-        GTK_RESPONSE_CLOSE,
-        NULL);
+    GtkWidget *rules_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    gtk_window_set_title(GTK_WINDOW(rules_window), "Правила игры");
+    gtk_window_set_modal(GTK_WINDOW(rules_window), TRUE);
+    gtk_window_set_transient_for(GTK_WINDOW(rules_window), 
+        GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(button))));
+    gtk_container_set_border_width(GTK_CONTAINER(rules_window), 12);
+    gtk_window_set_resizable(GTK_WINDOW(rules_window), FALSE);
     
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 380, 200);
-    gtk_container_set_border_width(GTK_CONTAINER(dialog), 16);
-    
-    // Текст правил
     const char *rules_text = 
         "Правила игры «Word by Word»\n\n"
         "1. В каждом раунде выпадают 6 случайных букв\n"
@@ -232,19 +242,22 @@ static void on_show_rules(GtkButton *button, gpointer user_data) {
         "   оно не засчитывается.\n\n"
         "5. Можно использовать любую букву\n"
         "   из набора кубиков.\n\n"
-        "6. Нажмите на кнопку «Новое задание» чтобы поменять набор букв на новый.\n\n"
+        "6. Нажмите на кнопку «Новое задание» чтобы\n"
+        "   поменять набор букв на новый.\n\n"
         "Удачи вам!";
     
-    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    // Вертикальный контейнер
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_container_add(GTK_CONTAINER(rules_window), vbox);
     
+    // Текст правил
     GtkWidget *label = gtk_label_new(rules_text);
     gtk_label_set_xalign(GTK_LABEL(label), 0.0);
     gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
-    gtk_box_pack_start(GTK_BOX(content), label, TRUE, TRUE, 0);
+    gtk_label_set_max_width_chars(GTK_LABEL(label), 50);
+    gtk_box_pack_start(GTK_BOX(vbox), label, FALSE, FALSE, 0);
     
-    gtk_widget_show_all(dialog);
-    gtk_dialog_run(GTK_DIALOG(dialog));
-    gtk_widget_destroy(dialog);
+    gtk_widget_show_all(rules_window);
 }
 
 int main(int argc, char *argv[]) {
@@ -303,86 +316,117 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-  /*
-    Заметки по программе:
+/*
+    Заметки по программе «Word by Word»:
     
     Структура программы:
-    - Программа загадывает букву и позицию, пользователь должен ввести слово,
-    содержащее эту букву на указанной позиции. Слово проверяется через онлайн-словарь Wiktionary API.
+    - Программа случайно выбирает набор из 6 букв «кубиков» и позицию (1, 2 или последняя).
+      Пользователь должен ввести русское слово, содержащее одну из букв набора на указанной позиции.
+      Слово проверяется через онлайн-словарь Wiktionary API.
     
     Глобальные переменные:
-    - letters[] — массив букв 
-    - positions[] — массив позиций 
-    - current_letter_index — индекс текущей буквы в массиве letters
-    - current_position_index — индекс текущей позиции в массиве positions
+    - cubes_letters[10][6] — 10 наборов «кубиков» по 6 букв кириллицы
+    - positions[] = {1, 2, -1} — допустимые позиции 
+    - label_task — метка для отображения задания
+    - label_result — метка для отображения результата проверки
+    - entry_word — поле ввода слова
+    - current_cube_set_index — индекс текущего набора кубиков (0..9)
+    - current_position_index — индекс текущей позиции (0..2)
+    
+    Типы данных:
+    - MemoryStruct — структура для накопления HTTP-ответа 
     
     Функции программы:
     
-    utf8_byte_offset():
-    - вычисляет позицию в байтах на основе количества символов
-    - нужна, потому что русские буквы в UTF-8 занимают 2 байта, а не 1
-    - принимает строку и позицию символа, возвращает смещение в байтах
+    utf8_byte_offset(str, char_pos):
+    - вычисляет байтовое смещение для указанного символа в строке UTF-8
+    - нужно, потому что русские буквы в UTF-8 занимают 2 байта, а не 1
+    - внешний цикл for считает символы, внутренний while пропускает продолженные байты
+    - принимает строку и номер символа, возвращает смещение в байтах
     
-    check_online():
+    write_callback(contents, size, nmemb, userp):
+    - callback-функция для libcurl, вызывается при получении каждой порции данных от сервера
+    - вычисляет размер порции (size * nmemb)
+    - расширяет буфер MemoryStruct через realloc
+    - копирует новые данные в конец буфера через memcpy
+    - добавляет нуль-терминатор \0 в конец для работы со строковыми функциями
+    
+    check_online(word):
     - проверяет существование слова через Wiktionary API
-    - использует libcurl для отправки HTTP-запроса
-    - URL: https://ru.wiktionary.org/w/api.php?action=query&titles=СЛОВО&format=json
-    - возвращает true, если слово найдено в словаре (нет поля "missing" в ответе)
-    - возвращает false, если слово не найдено или произошла ошибка соединения
-    
-    write_callback():
-    - callback-функция для libcurl
-    - накапливает ответ от сервера в динамическую строку MemoryStruct
+    - создаёт сессию libcurl (curl_easy_init)
+    - кодирует слово для URL (curl_easy_escape) — русские буквы превращаются в %D0%BA и т.д.
+    - формирует URL запроса: https://ru.wiktionary.org/w/api.php?action=query&titles=СЛОВО&format=json
+    - настраивает параметры: URL, callback-функцию, таймаут 10 сек, User-Agent
+    - выполняет запрос (curl_easy_perform), ответ накапливается в MemoryStruct через write_callback
+    - проверяет HTTP-код 200 и отсутствие поля "missing" в JSON-ответе через strstr
+    - возвращает true, если слово найдено, иначе false
+    - в конце освобождает все ресурсы (curl_free, curl_easy_cleanup, free)
     
     update_task():
-    - обновляет текст задания в интерфейсе
-    - очищает поле ввода и результат предыдущей проверки
+    - формирует строку из букв текущего набора кубиков (cubes_display)
+    - создаёт текст задания через snprintf с учётом позиции (1, 2 или «последняя»)
+    - обновляет метку задания, очищает метку результата и поле ввода
     
     choose_new_task():
-    - выбирает случайную букву из массива letters
-    - выбирает случайную позицию из массива positions
+    - выбирает случайный набор кубиков: rand() % 10
+    - выбирает случайную позицию: rand() % 3 → значение из positions[] = {1, 2, -1}
     - вызывает update_task() для отображения нового задания
     
-    on_check_word():
-    - обработчик нажатия кнопки "Проверить"
+    on_check_word(button, user_data):
+    - обработчик нажатия кнопки «Проверить»
     - получает введённое слово из entry_word
-    - проверяет слово через check_online()
-    - если слово существует, проверяет букву на нужной позиции
+    - проверяет на пустой ввод через g_utf8_strlen
+    - приводит слово к нижнему регистру через g_utf8_strdown
+    - вызывает check_online() для проверки существования слова
+    - определяет целевую позицию: если -1, то позиция = длина слова в символах
+    - находит байтовое смещение через utf8_byte_offset
+    - сравнивает букву на позиции с буквами текущего набора кубиков (strncmp в цикле)
     - выводит результат в label_result
+    - освобождает память через g_free
     
-    on_new_task():
-    - обработчик нажатия кнопки "Новое задание"
+    on_new_task(button, user_data):
+    - обработчик нажатия кнопки «Новое задание»
     - вызывает choose_new_task()
     
-    Проверка буквы на позиции
-    - g_utf8_strlen() — определяет длину строки в символах (не в байтах)
-    - utf8_byte_offset() — находит байтовое смещение для указанной позиции символа
-    - strncmp(&word[byte_pos], letters[...], strlen(...)) — сравнивает буквы
-    - возвращает 0, если буквы совпадают
+    on_show_rules(button, user_data):
+    - обработчик нажатия кнопки «Правила»
+    - создаёт модальное окно с текстом правил игры
+    - окно не растягиваемое, закрывается по крестику в заголовке
     
-    Работа с GTK
+    main(argc, argv):
+    - инициализирует локаль (setlocale) для поддержки UTF-8
+    - инициализирует генератор случайных чисел (srand(time(NULL)))
+    - инициализирует GTK (gtk_init)
+    - создаёт главное окно 500×240 с заголовком «Word by Word»
+    - создаёт виджеты: метка задания, поле ввода, кнопки, метка результата
+    - генерирует первое задание через choose_new_task
+    - отображает окно (gtk_widget_show_all) и запускает главный цикл (gtk_main)
+    
+    Работа с GTK:
     - GtkWindow — главное окно приложения
     - GtkBox (вертикальный и горизонтальный) — контейнеры для размещения виджетов
     - GtkLabel — текстовые метки (задание и результат)
     - GtkEntry — поле ввода слова
-    - GtkButton — кнопки "Проверить" и "Новое задание"
-    - g_signal_connect() — связывает события (клики) с функциями-обработчиками
+    - GtkButton — кнопки «Проверить», «Новое задание», «Правила»
+    - g_signal_connect() — связывает события (clicked) с функциями-обработчиками
     
-    Особенности реализации
+    Проверка буквы на позиции:
+    - g_utf8_strlen() — определяет длину строки в символах (не в байтах)
+    - utf8_byte_offset() — находит байтовое смещение для указанной позиции символа
+    - strncmp(&word[byte_pos], allowed, strlen(allowed)) — сравнивает букву с кубиком
+    - возвращает 0, если буквы совпадают
+    
+    Особенности реализации:
     - srand(time(NULL)) — инициализация генератора случайных чисел текущим временем
-      чтобы при каждом запуске задания были разными
-    - setlocale(LC_ALL, "") — включает поддержку UTF-8 для корректной работы с русским текстом
+    - setlocale(LC_ALL, "") — включает поддержку UTF-8 для работы с русским текстом
+    - g_utf8_strdown() — приведение слова к нижнему регистру (заглавные буквы не мешают проверке)
     - gtk_entry_set_placeholder_text() — подсказка в поле ввода
     
-    Отличие от предыдущей версии 
-    - Раньше использовался Yandex Dictionary API (требовал API-ключ)
-    - Теперь используется открытый Wiktionary API (не требует ключа)
-    - Функция check_online() переписана под Wiktionary
-    
     Основная логика: 
-    1. Генерируется случайное задание (буква + позиция)
+    1. Генерируется случайное задание (набор кубиков + позиция)
     2. Пользователь вводит слово
-    3. Слово проверяется через Wiktionary API
-    4. Если слово существует, проверяется буква на нужной позиции
-    5. Выводится результат: подходит / не подходит / не найдено
+    3. Слово приводится к нижнему регистру
+    4. Слово проверяется через Wiktionary API
+    5. Если слово существует, проверяется буква на нужной позиции
+    6. Выводится результат: подходит / не подходит / не найдено
 */
