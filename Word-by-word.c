@@ -125,11 +125,12 @@ bool check_online(const char* word) {
     return result;              // возвращает true или false
 }
 
-
+//Функция отображения задания
 static void update_task(void) {
-    char buffer[256];
-    char cubes_display[128] = "";
+    char buffer[256];                               // буфер для текста задания
+    char cubes_display[128] = "";                   // строка для отображения букв кубиков
     
+    // собирает строку из букв текущего набора кубиков 
     for (int i = 0; i < 6; i++) {
         strcat(cubes_display, cubes_letters[current_cube_set_index][i]);
         if (i < 5) strcat(cubes_display, " ");
@@ -137,63 +138,68 @@ static void update_task(void) {
     
     int pos = positions[current_position_index];
     if (pos == -1) {
+        // позиция "последняя"
         snprintf(buffer, sizeof(buffer), 
                  "Кубики: [ %s ]\nПридумайте слово с одной из букв выше на последней позиции.",
                  cubes_display);
     } else {
+        // позиция 1 или 2
         snprintf(buffer, sizeof(buffer), 
                  "Кубики: [ %s ]\nПридумайте слово с одной из букв выше на позиции %d.",
                  cubes_display, pos);
     }
     
-    gtk_label_set_text(GTK_LABEL(label_task), buffer);
-    gtk_label_set_text(GTK_LABEL(label_result), "");
-    gtk_entry_set_text(GTK_ENTRY(entry_word), "");
+    gtk_label_set_text(GTK_LABEL(label_task), buffer);  // выводит задание на экран
+    gtk_label_set_text(GTK_LABEL(label_result), "");    // очищает результат
+    gtk_entry_set_text(GTK_ENTRY(entry_word), "");      // очищает поле ввода
 }
 
+//Функция рандома
 static void choose_new_task(void) {
-    current_cube_set_index = rand() % 10; 
-    current_position_index = rand() % (sizeof(positions) / sizeof(positions[0])); // 1, 2 или 3
-    update_task();
+    current_cube_set_index = rand() % 10;                                         // случайный набор кубиков 
+    current_position_index = rand() % (sizeof(positions) / sizeof(positions[0])); // случайная позиция 
+    update_task();                                                               // обновляет задание на экране
 }
 
+//Функция проверки слова
 static void on_check_word(GtkButton *button, gpointer user_data) {
-    (void)button;
-    (void)user_data;
+    (void)button;                                      
+    (void)user_data;                                    
     
-    const char *word = gtk_entry_get_text(GTK_ENTRY(entry_word));
-    if (g_utf8_strlen(word, -1) == 0) {
+    const char *word = gtk_entry_get_text(GTK_ENTRY(entry_word)); // получает введённое слово
+    if (g_utf8_strlen(word, -1) == 0) {                           // если поле пустое
         gtk_label_set_text(GTK_LABEL(label_result), "Введите слово.");
         return;
     }
 
-    // Приводим слово к нижнему регистру
+    // приводит слово к нижнему регистру 
     char *lower_word = g_utf8_strdown(word, -1);
 
-    if (!check_online(lower_word)) {
+    if (!check_online(lower_word)) {    // проверяет существование слова
         gtk_label_set_text(GTK_LABEL(label_result), "Слово не найдено в словаре.");
-        g_free(lower_word);
+        g_free(lower_word);          
         return;
     }
 
-    int target_pos = positions[current_position_index];
-    if (target_pos == -1) {
-        target_pos = (int)g_utf8_strlen(lower_word, -1);
+    int target_pos = positions[current_position_index]; // берёт позицию из задания
+    if (target_pos == -1) {                            
+        target_pos = (int)g_utf8_strlen(lower_word, -1); // позиция это длина слова в символах
     }
 
-    if (target_pos > (int)g_utf8_strlen(lower_word, -1)) {
+    if (target_pos > (int)g_utf8_strlen(lower_word, -1)) { // если слово короче, чем нужно
         gtk_label_set_text(GTK_LABEL(label_result), "Слово слишком короткое для этой позиции.");
         g_free(lower_word);
         return;
     }
 
-    int byte_pos = utf8_byte_offset(lower_word, target_pos - 1);
+    int byte_pos = utf8_byte_offset(lower_word, target_pos - 1); // байтовое смещение до нужной буквы
     
+    // проверяет есть ли буква на позиции в текущем наборе кубиков
     bool letter_found = false;
     for (int i = 0; i < 6; i++) {
         const char *allowed = cubes_letters[current_cube_set_index][i];
         if (strncmp(&lower_word[byte_pos], allowed, strlen(allowed)) == 0) {
-            letter_found = true;
+            letter_found = true;                        
             break;
         }
     }
@@ -205,26 +211,29 @@ static void on_check_word(GtkButton *button, gpointer user_data) {
             "Слово есть, но на позиции нет ни одной из букв с кубиков.");
     }
     
-    g_free(lower_word);
+    g_free(lower_word);                                 // освобождает память
 }
 
+//Функция нового задания
 static void on_new_task(GtkButton *button, gpointer user_data) {
-    (void)button;
-    (void)user_data;
-    choose_new_task();
+    (void)button;                                       
+    (void)user_data;                                    
+    choose_new_task();                                  // генерирует новое задание
 }
 
+//Функция кнопки правил
 static void on_show_rules(GtkButton *button, gpointer user_data) {
     (void)button;
     (void)user_data;
     
+    // создаёт модальное окно 
     GtkWidget *rules_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(rules_window), "Правила игры");
-    gtk_window_set_modal(GTK_WINDOW(rules_window), TRUE);
-    gtk_window_set_transient_for(GTK_WINDOW(rules_window), 
+    gtk_window_set_modal(GTK_WINDOW(rules_window), TRUE);           
+    gtk_window_set_transient_for(GTK_WINDOW(rules_window),           
         GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(button))));
-    gtk_container_set_border_width(GTK_CONTAINER(rules_window), 12);
-    gtk_window_set_resizable(GTK_WINDOW(rules_window), FALSE);
+    gtk_container_set_border_width(GTK_CONTAINER(rules_window), 12); 
+    gtk_window_set_resizable(GTK_WINDOW(rules_window), FALSE);       
     
     const char *rules_text = 
         "Правила игры «Word by Word»\n\n"
@@ -246,72 +255,80 @@ static void on_show_rules(GtkButton *button, gpointer user_data) {
         "   поменять набор букв на новый.\n\n"
         "Удачи вам!";
     
-    // Вертикальный контейнер
-    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);      // вертикальный контейнер
     gtk_container_add(GTK_CONTAINER(rules_window), vbox);
     
-    // Текст правил
-    GtkWidget *label = gtk_label_new(rules_text);
-    gtk_label_set_xalign(GTK_LABEL(label), 0.0);
-    gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
-    gtk_label_set_max_width_chars(GTK_LABEL(label), 50);
+    GtkWidget *label = gtk_label_new(rules_text);                    // метка с текстом правил
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0);                     // выравнивание по левому краю
+    gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);                 // перенос строк
+    gtk_label_set_max_width_chars(GTK_LABEL(label), 50);             // макс. ширина в символах
     gtk_box_pack_start(GTK_BOX(vbox), label, FALSE, FALSE, 0);
     
-    gtk_widget_show_all(rules_window);
+    gtk_widget_show_all(rules_window);                               // показывает окно
 }
 
+//Главная функция 
 int main(int argc, char *argv[]) {
-    setlocale(LC_ALL, "");
-    srand((unsigned int) time(NULL));
+    setlocale(LC_ALL, "");                               // включает поддержку UTF-8
+    srand((unsigned int) time(NULL));                    // инициализация генератора случайных чисел
 
-    gtk_init(&argc, &argv);
+    gtk_init(&argc, &argv);                              // запуск системы GTK
 
+    // создаёт главное окно
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "Word by Word");
-    gtk_window_set_default_size(GTK_WINDOW(window), 500, 240);
-    gtk_container_set_border_width(GTK_CONTAINER(window), 16);
+    gtk_window_set_default_size(GTK_WINDOW(window), 500, 240); 
+    gtk_container_set_border_width(GTK_CONTAINER(window), 16); 
 
-    g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
+    g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL); // закрытие окна это выход
 
+    // главный вертикальный контейнер 
     GtkWidget *main_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
     gtk_container_add(GTK_CONTAINER(window), main_box);
 
+    // метка с заданием
     label_task = gtk_label_new(NULL);
-    gtk_label_set_xalign(GTK_LABEL(label_task), 0.0);
+    gtk_label_set_xalign(GTK_LABEL(label_task), 0.0);    
     gtk_box_pack_start(GTK_BOX(main_box), label_task, FALSE, FALSE, 0);
 
+    // контейнер с меткой ваше слово + поле ввода
     GtkWidget *entry_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_box_pack_start(GTK_BOX(main_box), entry_box, FALSE, FALSE, 0);
 
     GtkWidget *entry_label = gtk_label_new("Ваше слово:");
     gtk_box_pack_start(GTK_BOX(entry_box), entry_label, FALSE, FALSE, 0);
 
-    entry_word = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(entry_word), "Введите слово здесь");
+    // поле ввода
+    entry_word = gtk_entry_new();   
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entry_word), "Введите слово здесь"); 
     gtk_box_pack_start(GTK_BOX(entry_box), entry_word, TRUE, TRUE, 0);
 
+    // горизонтальный контейнер для кнопок
     GtkWidget *button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_box_pack_start(GTK_BOX(main_box), button_box, FALSE, FALSE, 0);
 
+    // кнопка "Проверить"
     GtkWidget *check_button = gtk_button_new_with_label("Проверить");
-    g_signal_connect(check_button, "clicked", G_CALLBACK(on_check_word), NULL);
+    g_signal_connect(check_button, "clicked", G_CALLBACK(on_check_word), NULL); 
     gtk_box_pack_start(GTK_BOX(button_box), check_button, TRUE, TRUE, 0);
 
+    // кнопка "Новое задание"
     GtkWidget *new_button = gtk_button_new_with_label("Новое задание");
     g_signal_connect(new_button, "clicked", G_CALLBACK(on_new_task), NULL);
     gtk_box_pack_start(GTK_BOX(button_box), new_button, TRUE, TRUE, 0);
 
-    // Кнопка "Правила"
+    // кнопка "Правила"
     GtkWidget *rules_button = gtk_button_new_with_label("Правила");
     g_signal_connect(rules_button, "clicked", G_CALLBACK(on_show_rules), NULL);
     gtk_box_pack_start(GTK_BOX(button_box), rules_button, TRUE, TRUE, 0);
 
+    // метка для вывода результата проверки
     label_result = gtk_label_new(NULL);
     gtk_label_set_xalign(GTK_LABEL(label_result), 0.0);
     gtk_box_pack_start(GTK_BOX(main_box), label_result, FALSE, FALSE, 0);
 
-    gtk_widget_show_all(window);
-    gtk_main();
+    gtk_widget_show_all(window);                         // отображает всё окно
+    gtk_main();                                          // главный цикл GTK или ожидание действий
 
     return 0;
 }
